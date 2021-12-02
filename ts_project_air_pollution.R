@@ -248,7 +248,7 @@ fit_garch0<-garchFit(~arma(1,1)+garch(1,1),data=air_ts)
 summary(fit_garch0)
 plot(fit_garch0)
 # use ql to deal with non normality.
-fit_garch1<-garchFit(~arma(1,1)+garch(1,1),data=air_ts, cond.dist = "qmle")
+fit_garch1<-garchFit(~arma(1,1)+garch(1,1),data=air_ts, cond.dist = "QMLE")
 
 # out of sample computations.
 # compare error with expanding window forecasts
@@ -334,10 +334,8 @@ dm.test(error_23, error_25,h=h,power=2)
 summary(fit23)
 summary(fit25)
 
-# generate plot of forecast
+# Generate plot of forecast
 # using the best model, fit23.
-# todo: set dates correctly
-
 # I can get the actual data observed during this period (not included in the analysis above.)
 station_observed <- highest_station %>% dplyr::filter(datetime >= "2021-03-01" & datetime <= "2021-04-01")
 # missing some time measurements
@@ -353,7 +351,7 @@ min(obs_daily$day)
 max(obs_daily$day)
 nrow(obs_daily)
 # create the ts
-obs_ts <- ts(obs_daily$daily_concentration, frequency=1, start=c(2021, 1))
+obs_ts <- ts(obs_daily$daily_concentration, frequency=7, start=c(2021, 9))
 length(obs_ts)
 ts.plot(obs_ts)
 
@@ -379,7 +377,7 @@ dev.off()
 
 
 ########################
-# multivariate analysis:
+# multivariate analysis
 ########################
 
 
@@ -433,8 +431,12 @@ CADFtest(cov_ts, type= "drift", criterion= "BIC", max.lag.y=cov_max_lag)
 CADFtest(diff(cov_ts), type= "drift", criterion= "BIC", max.lag.y=cov_max_lag)
 # both are stationary
 
+png(filename="d:/asus_documents/ku_leuven/courses/time_series/project/figures/cov_acf.png")
 acf(cov_ts)
+dev.off()
+png(filename="d:/asus_documents/ku_leuven/courses/time_series/project/figures/cov_pacf.png")
 pacf(cov_ts)
+dev.off()
 d_cov <- diff(cov_ts) 
 acf(d_cov)
 pacf(d_cov)
@@ -498,7 +500,7 @@ nrow(traffic_daily)
 min(traffic_daily$day)
 max(traffic_daily$day)
 # create the ts
-traffic_ts <- ts(traffic_daily$daily_volume, frequency=7, start=c(2020, 1))
+traffic_ts <- ts(traffic_daily$daily_volume, frequency=7, start=c(2020, 9))
 #plot.ts(traffic_ts)
 png(filename="d:/asus_documents/ku_leuven/courses/time_series/project/figures/traffic_ts.png", width=1000)
 p <- ggplot(traffic_daily, aes(x=day, y=daily_volume)) +
@@ -534,41 +536,62 @@ acf(d_traffic)
 pacf(d_traffic)
 acf(diff(d_traffic, 7))
 pacf(diff(d_traffic))
-
 # remember to correct for residuals when testing for cointegration.
 
-
-# todo: var or vecm? i have two stationary series, but i could still test for cointegration.
-# multivariate analysis for garch effects.
-# if i want to check for garch effects, see exercise 1.
-# basicallly i need to fit the var model, select the lag, and 
-# make sure the residuals are ok once that model is fit. then look at the impulse 
-# response to see how the time series effect each other
-# if i want to look at garch effects i will need to look at the squared residuals.
-# 3
-# formally test for granger causality of ???log(cs) on ???log(gdp) using an adlm(1). what
-# do you conclude?
-
-# fitting the var model
-# not reported in project. but the model isn't necessarily inadequate
-# there may be cases where using nonstationary series in var is ok.
+# Testing for cointegration
 length(cov_ts)
 length(air_ts)
 length(diff(traffic_ts))
+# Set up dfs
 var_df_cov <- data.frame(air_ts, traffic_ts, cov_ts)
-var_df <- data.frame(air_ts, traffic_ts)
+var_df_no_cov <- data.frame(air_ts, traffic_ts)
+var_df_no_air <- data.frame(traffic_ts, cov_ts)
+# lag of 9
 names(var_df_cov)<-c("air","traffic", "covid")
-names(var_df)<-c("air","traffic")
-VARselect(var_df,lag.max=10,type="const")
-# by sic we select order 8
+names(var_df_no_cov)<-c("air","traffic")
+names(var_df_no_air)<-c("traffic","covid")
 VARselect(var_df_cov,lag.max=10,type="const")
+# order 8
+VARselect(var_df_no_cov,lag.max=10,type="const")
 # by sic we select order 8
-fit_var1 <- VAR(var_df,type="const",p=7)
+VARselect(var_df_no_air,lag.max=10,type="const")
+# order 9
+
+# Testing cointegration
+# This first test is the most important, because we have to check if the two 
+# non-stationary series are cointegrated.
+trace1 <- ca.jo(var_df_no_air,type="trace",K=9,ecdet="const",spec="transitory")
+summary(trace1)
+# The result supposts cointegration with 1 test equation.
+trace2 <- ca.jo(var_df_cov,type="trace",K=8,ecdet="const",spec="transitory")
+summary(trace2)
+# When including that stationary air series, we get 2 test equations, though the second
+# is rather on the boundary b/w signficant and not
+# This test below is not necessary:
+trace3 <- ca.jo(var_df_no_cov,type="trace",K=8,ecdet="const",spec="transitory")
+summary(trace3)
+
+#repeat the same procedure using johansen’s maximum eigenvalue test statistic.
+# const is constant term in the long run relationshp
+# transitory means to not include a deterministic trend in the test equation.
+# we interpret this test as we did for the prvious test
+maxeigen_test <- ca.jo(var_df_no_air,type="eigen",K=9,ecdet="const",spec="transitory")
+summary(maxeigen_test)
+# we see that we reject no cointegration at the 1% level
+
+#############
+# VAR model
+# Going in differences for the non-stationary series
+# Need to remove first measurement from stationary series
+var_df_cov <- data.frame(air_ts[2:length(air_ts)], diff(traffic_ts), diff(cov_ts))
+var_df_no_cov <- data.frame(air_ts[2:length(air_ts)], diff(traffic_ts))
+names(var_df_cov)<-c("air","traffic", "covid")
+names(var_df_no_cov)<-c("air","traffic")
+# there may be cases where using nonstationary series in var is ok.
+fit_var1 <- VAR(var_df_no_cov,type="const",p=8)
 fit_var2 <- VAR(var_df_cov,type="const",p=8)
 summary(fit_var1)
 summary(fit_var2)
-# we can observe an r2 of .7706 indicating dlogcons.l1 + dlogip.l1 + const explains 77% in dlogip
-# the regessors are jointly significant.
 
 # checking the residuals
 var2_residuals<-resid(fit_var2)
@@ -582,36 +605,77 @@ ccf(var2_residuals[,2],var2_residuals[,3])
 # we then examine the impulse function
 irf_var<-irf(fit_var2,ortho=F,boot=T)
 plot(irf_var)
-# from the impulse function we can say that at lag 0, it's 1 and 0 for each, which is how it should be
-# then after 0, we notice that there is a significant negative response when we increase u_t by 1 unit
-# in dlogcons at t+1. there is also a significant increase in dlogp at t+3.
-# when the impulse is given to d log p, there is a negative change in dlogcons at t3.
+
+# TODO: try this with a shorter series for just the period where covid is high
+# refit all the models for that period
+
+# Generating predictions
+H <- c(1, 5, 10)
+s <- round(0.75*length(air_ts))
+dm_tests <- matrix(nrow=length(H), ncol=3)
+oos_errors <- matrix(nrow=3, ncol=5)
+for (i in 1:length(H)){
+    h <- H[i]
+    print(h)
+    error_cov <- c()
+    error_nocov <- c()
+    for (k in s:(length(air_ts)-h)){
+        var_df_cov_sub <- data.frame(air_ts[1:k], diff(traffic_ts)[1:k], diff(cov_ts)[1:k])
+        var_df_no_cov_sub <- data.frame(air_ts[1:k], diff(traffic_ts)[1:k])
+        names(var_df_cov_sub)<-c("air","traffic", "covid")
+        names(var_df_no_cov_sub)<-c("air","traffic")
+        fit_var_cov <- VAR(var_df_cov_sub,type="const",p=8)
+        fit_var_nocov <- VAR(var_df_no_cov_sub,type="const",p=8)
+        # predict h step ahead
+        predict_cov_out <- predict(fit_var_cov,n.ahead=h)
+        predict_cov <- predict_cov_out[[1]][1]$air[h]
+        predict_nocov_out <- predict(fit_var_nocov,n.ahead=h)
+        predict_nocov <- predict_nocov_out[[1]][1]$air[h]
+        # subtract the predicted value predict.h from the observed value, y[i+h]
+        error_cov <- c(error_cov,air_ts[k+h]-predict_cov)
+        error_nocov <- c(error_nocov,air_ts[k+h]-predict_nocov)
+    }
+    cov_mape <- mean(abs(error_cov)/air_ts[(s+h):length(air_ts)])
+    nocov_mape <- mean(abs(error_nocov)/air_ts[(s+h):length(air_ts)])
+    cov_rmse <- sqrt(mean(error_cov^2))
+    nocov_rmse <- sqrt(mean(error_nocov^2))
+    oos_errors[i, 1] <- h
+    oos_errors[i, 2] <- cov_mape
+    oos_errors[i, 3] <- cov_rmse
+    oos_errors[i, 4] <- nocov_mape
+    oos_errors[i, 5] <- nocov_rmse
+    dm_tests[i, 1] <- h
+    dm_tests[i, 2] <- dm.test(error_cov, error_nocov,h=h,power=1)$p.value[[1]]
+    dm_tests[i, 3] <- dm.test(error_cov, error_nocov,h=h,power=2)$p.value[[1]]
+}
+oos_errors
+dm_tests
+oos_df <- as.data.frame(oos_errors)
+dm_tests
+dm_df <- as.data.frame(dm_tests)
+colnames(oos_df) <- c("Horizon", "W/ COVID MAPE", "W/COVID RMSE", "W/out COVID MAPE", "W/out COVID RMSE")
+colnames(dm_df) <- c("Horizon", "MAE", "MSE")
+kbl(oos_df, booktabs = T, format="latex")
+kbl(dm_df, booktabs = T, format="latex")
+
+# Generate plot of forecast
+#
 
 
 ####### 
-# vecm
-# reported in project
+# NOT USING FOR REPORT
+# VECM
 # see exercise 6
-VARselect(var_df_cov,lag.max=10,type="const")
-# by dic we select order 8
-trace_test<-ca.jo(var_df_cov,type="trace",K=8,ecdet="const",spec="transitory")
-# also test without covid, order 7 from code above
-trace_test<-ca.jo(var_df, type="trace",K=7,ecdet="const",spec="transitory")
-summary(trace_test)
-# we appear to have two cointegrating equations
+# k is from code above
 
-#repeat the same procedure using johansen’s maximum eigenvalue test statistic.
-# const is constant term in the long run relationshp
-# transitory means to not include a deterministic trend in the test equation.
-# we interpret this test as we did for the prvious test
-maxeigen_test<-ca.jo(var_df_cov,type="eigen",K=8,ecdet="const",spec="transitory")
-summary(maxeigen_test)
-# we see that we do reject no cointegration at the 5% level; though not at the 1% level.
-# there is 1 cointegrating equation.
+# Test for cointegration with engel grangers
+fit_ci <- lm(cov_ts~traffic_ts)
+CADFtest(fit_ci$residuals, max.lag.y = cov_max_lag, criterion="BIC", type="drift")
+# The test is rejected (indicating stationarity), therefore we have cointegration
 
-# estimate a vector error correcting model.
-# we set r=2 because that is the result from the previous two tests.
-fit_vecm<-cajorls(trace_test,r=2)
+# estimate a vector error correcting model, using the 3 time series (trace2 from above)
+# we set r=2 because that is the result from the previous tests.
+fit_vecm<-cajorls(trace2,r=2)
 fit_vecm
 # the cointegration vector will be:
 # ect1          ect2
@@ -625,9 +689,7 @@ fit_vecm
 
 # then we can do predition with the ecm
 # Using observed air values from univariate analysis
-
-myforecast <- predict(vec2var(trace_test,r=2),n.ahead=32)
-myforecast$fcst$
+vec_forecast <- predict(vec2var(trace_test,r=2),n.ahead=32)
 air_forecast<-ts(myforecast$fcst$air[,1],frequency=1,start=c(2021,1))
 air_lower<-ts(myforecast$fcst$air[,2],frequency=1,start=c(2021,1))
 air_upper<-ts(myforecast$fcst$air[,3],frequency=1,start=c(2021,1))
