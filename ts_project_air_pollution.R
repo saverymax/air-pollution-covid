@@ -331,12 +331,15 @@ for (k in s:(length(air_ts)-h)){
 dm.test(error_23, error_25,h=h,power=1)
 dm.test(error_23, error_25,h=h,power=2)
 
+summary(fit23)
+summary(fit25)
+
 # generate plot of forecast
 # using the best model, fit23.
 # todo: set dates correctly
 
 # I can get the actual data observed during this period (not included in the analysis above.)
-station_observed <- highest_station %>% dplyr::filter(datetime >= "2021-01-01" & datetime <= "2021-02-01")
+station_observed <- highest_station %>% dplyr::filter(datetime >= "2021-03-01" & datetime <= "2021-04-01")
 # missing some time measurements
 station_obs_complete <- station_observed %>% tidyr::complete(datetime = seq(min(datetime), max(datetime), by="hour"))
 station_obs_complete$concentration_inter <- round(na_interpolation(station_obs_complete$Concentration),1)
@@ -345,6 +348,7 @@ statsNA(as.matrix(station_obs_complete$concentration_inter))
 # aggregate by day, but need to round up if staying in 2019
 obs_daily <- station_obs_complete %>% mutate(day=lubridate::ceiling_date(datetime, "day")) %>% group_by(day) %>% 
   summarise(daily_concentration=mean(concentration_inter)) 
+obs_daily$daily_concentration
 min(obs_daily$day)
 max(obs_daily$day)
 nrow(obs_daily)
@@ -353,27 +357,23 @@ obs_ts <- ts(obs_daily$daily_concentration, frequency=1, start=c(2021, 1))
 length(obs_ts)
 ts.plot(obs_ts)
 
-fcast <- predict(fit23,n.ahead=30)
+fcast <- predict(fit23,n.ahead=32)
 expected <- fcast$pred
-fcast
 lower<-fcast$pred-qnorm(0.975)*fcast$se
 upper<-fcast$pred+qnorm(0.975)*fcast$se
+forecast_df <- data.frame(pred=expected, day=obs_daily$day, lower=lower, upper=upper)
 
-plot.ts(air_ts)
-
-lines(expected,col="red")
-lines(lower,col="blue")
-lines(upper,col="blue")
-
-
-
-png(filename="d:/asus_documents/ku_leuven/courses/time_series/project/figures/cov_ts.png", width=1000)
-forecast_df <- data.frame(pred=fcast, date=pred_dates, lower=lower, upper=upper, )
-p <- ggplot(covid_subset, aes(x=day, y=total_cases)) +
-    geom_line() + 
-    ggtitle("daily covid-19 cases, flanders") +
-    xlab("2020") +
-    ylab("daily cases")
+png(filename="d:/asus_documents/ku_leuven/courses/time_series/project/figures/univariate_forecast.png")
+colors <- c("Observed"="green", "Predicted"="red", "lower"="black", "upper"="black")
+p <- ggplot() +
+    geom_line(data=obs_daily, aes(x=day, y=daily_concentration, color="Observed")) + 
+    geom_line(data=forecast_df, aes(x=day, y=pred, color="Predicted")) + 
+    geom_line(data=forecast_df, aes(x=day, y=lower, color="lower")) + 
+    geom_line(data=forecast_df, aes(x=day, y=upper, color="upper")) + 
+    ggtitle("Predicted and observed concentration for March-April, 2020") +
+    labs(y = "Daily. conc", x = "Day",
+         color = "Legend") +
+    scale_color_manual(values = colors)
 p
 dev.off()
 
@@ -382,16 +382,17 @@ dev.off()
 # multivariate analysis:
 ########################
 
-#TODO: It lowercased my shit again.
 
 # https://www.ifo.de/docdl/cesifo1_wp1939.pdf
 # https://aip.scitation.org/doi/pdf/10.1063/1.5016666
 # load covid data.
 covid_df <- read_excel("d:/asus_documents/ku_leuven/courses/time_series/project/covid19be.xlsx")
 head(covid_df)
+names(covid_df) <- tolower(names(covid_df))
+head(covid_df)
 # aggregate the classes.
 covid_df %>% group_by()
-covid_flanders <- covid_df %>% dplyr::filter(region=="flanders") %>% 
+covid_flanders <- covid_df %>% dplyr::filter(region=="Flanders") %>% 
     mutate(day=lubridate::ceiling_date(date, "day")) %>% 
     group_by(day) %>% summarise(total_cases=sum(cases))
 covid_flanders
@@ -428,8 +429,8 @@ plot.ts(cov_ts)
 
 # test for non stationarity
 cov_max_lag=round(sqrt(length(cov_ts)))
-cadftest(cov_ts, type= "drift", criterion= "bic", max.lag.y=cov_max_lag)
-cadftest(diff(cov_ts), type= "drift", criterion= "bic", max.lag.y=cov_max_lag)
+CADFtest(cov_ts, type= "drift", criterion= "BIC", max.lag.y=cov_max_lag)
+CADFtest(diff(cov_ts), type= "drift", criterion= "BIC", max.lag.y=cov_max_lag)
 # both are stationary
 
 acf(cov_ts)
