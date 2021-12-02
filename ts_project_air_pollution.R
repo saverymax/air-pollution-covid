@@ -419,9 +419,9 @@ cov_ts <- ts(covid_subset$total_cases, frequency=7, start=c(2020, 9))
 png(filename="d:/asus_documents/ku_leuven/courses/time_series/project/figures/cov_ts.png", width=1000)
 p <- ggplot(covid_subset, aes(x=day, y=total_cases)) +
     geom_line() + 
-    ggtitle("daily covid-19 cases, flanders") +
+    ggtitle("Daily COVID-19 cases, Flanders") +
     xlab("2020") +
-    ylab("daily cases")
+    ylab("Daily cases")
 p
 dev.off()
 
@@ -446,15 +446,16 @@ pacf(diff(d_cov, 7))
 traffic_df <- read_excel(
         path="d:/linux_documents_11_2021/thesis/code/multi-modal-pollution/data/traffic/20210921-tunnels2019-sept2021.xlsx"
         ) 
+names(traffic_df) <- tolower(names(traffic_df))
 head(traffic_df)
 nrow(traffic_df)
 # first need to select the detector to use.
 traffic_summary <- traffic_df %>% dplyr::group_by(detector) %>% 
-  summarise(avg_tf=mean(volume, na.rm=t), sd_tf=sd(volume, na.rm=t), len=n()) %>% 
+  summarise(avg_tf=mean(volume, na.rm=T), sd_tf=sd(volume, na.rm=T), len=n()) %>% 
   arrange(desc(avg_tf))
 traffic_summary
 # using tun bel in because it has data for longest period with a high average
-detector_df <- traffic_df %>% dplyr::filter(detector=="tun bel in")
+detector_df <- traffic_df %>% dplyr::filter(detector=="Tun Bel IN")
 nrow(detector_df)
 detector_df$from <- ymd_hms(detector_df$from)
 min(detector_df$from)
@@ -481,13 +482,13 @@ detector_complete[1:3, "from"]
 # https://stats.stackexchange.com/questions/261271/imputation-methods-for-time-series-data
 # imputets is for univariate, it is probably ok to use for the sake of this
 # project
-statsna(as.matrix(detector_complete$volume))
+statsNA(as.matrix(detector_complete$volume))
 # run imputations
 # choice between linear, spline, and stineman interpolations
 # need to round for some reason.
 detector_complete$volume_inter <- round(na_interpolation(detector_complete$volume),1)
 ggplot_na_imputations(detector_complete$volume, detector_complete$volume_inter)
-statsna(as.matrix(detector_complete$volume_inter))
+statsNA(as.matrix(detector_complete$volume_inter))
 
 # aggregate by day, but need to round up if staying in 2019
 traffic_daily <- detector_complete %>% mutate(day=lubridate::ceiling_date(from, "day")) %>% group_by(day) %>% 
@@ -502,9 +503,9 @@ traffic_ts <- ts(traffic_daily$daily_volume, frequency=7, start=c(2020, 1))
 png(filename="d:/asus_documents/ku_leuven/courses/time_series/project/figures/traffic_ts.png", width=1000)
 p <- ggplot(traffic_daily, aes(x=day, y=daily_volume)) +
     geom_line() + 
-    ggtitle("daily traffic volume, brussels belliard tunnel") +
+    ggtitle("Daily traffic volume, Brussels Belliard Tunnel") +
     xlab("2020") +
-    ylab("daily volume")
+    ylab("Daily volume")
 p
 dev.off()
 
@@ -521,8 +522,8 @@ dev.off()
 
 # test for non stationarity
 tf_max_lag=round(sqrt(length(traffic_ts)))
-cadftest(traffic_ts, type= "drift", criterion= "bic", max.lag.y=tf_max_lag)
-cadftest(diff(traffic_ts), type= "drift", criterion= "bic", max.lag.y=tf_max_lag)
+CADFtest(traffic_ts, type= "drift", criterion= "BIC", max.lag.y=tf_max_lag)
+CADFtest(diff(traffic_ts), type= "drift", criterion= "BIC", max.lag.y=tf_max_lag)
 # in differences we have stationarity. in levels we do not
 # for the air time series, it was stationary for both.
 
@@ -558,12 +559,12 @@ var_df_cov <- data.frame(air_ts, traffic_ts, cov_ts)
 var_df <- data.frame(air_ts, traffic_ts)
 names(var_df_cov)<-c("air","traffic", "covid")
 names(var_df)<-c("air","traffic")
-varselect(var_df,lag.max=10,type="const")
-# by sic we select order 7
-varselect(var_df_cov,lag.max=10,type="const")
+VARselect(var_df,lag.max=10,type="const")
 # by sic we select order 8
-fit_var1 <- var(var_df,type="const",p=7)
-fit_var2 <- var(var_df_cov,type="const",p=8)
+VARselect(var_df_cov,lag.max=10,type="const")
+# by sic we select order 8
+fit_var1 <- VAR(var_df,type="const",p=7)
+fit_var2 <- VAR(var_df_cov,type="const",p=8)
 summary(fit_var1)
 summary(fit_var2)
 # we can observe an r2 of .7706 indicating dlogcons.l1 + dlogip.l1 + const explains 77% in dlogip
@@ -579,7 +580,7 @@ ccf(var2_residuals[,1],var2_residuals[,3])
 ccf(var2_residuals[,2],var2_residuals[,3])
 
 # we then examine the impulse function
-irf_var<-irf(fit_var2,ortho=false,boot=true)
+irf_var<-irf(fit_var2,ortho=F,boot=T)
 plot(irf_var)
 # from the impulse function we can say that at lag 0, it's 1 and 0 for each, which is how it should be
 # then after 0, we notice that there is a significant negative response when we increase u_t by 1 unit
@@ -591,11 +592,11 @@ plot(irf_var)
 # vecm
 # reported in project
 # see exercise 6
-varselect(var_df_cov,lag.max=10,type="const")
+VARselect(var_df_cov,lag.max=10,type="const")
 # by dic we select order 8
-trace_test<-ca.jo(var_df_cov,type="trace",k=8,ecdet="const",spec="transitory")
+trace_test<-ca.jo(var_df_cov,type="trace",K=8,ecdet="const",spec="transitory")
 # also test without covid, order 7 from code above
-trace_test<-ca.jo(var_df, type="trace",k=7,ecdet="const",spec="transitory")
+trace_test<-ca.jo(var_df, type="trace",K=7,ecdet="const",spec="transitory")
 summary(trace_test)
 # we appear to have two cointegrating equations
 
@@ -603,7 +604,7 @@ summary(trace_test)
 # const is constant term in the long run relationshp
 # transitory means to not include a deterministic trend in the test equation.
 # we interpret this test as we did for the prvious test
-maxeigen_test<-ca.jo(var_df_cov,type="eigen",k=8,ecdet="const",spec="transitory")
+maxeigen_test<-ca.jo(var_df_cov,type="eigen",K=8,ecdet="const",spec="transitory")
 summary(maxeigen_test)
 # we see that we do reject no cointegration at the 5% level; though not at the 1% level.
 # there is 1 cointegrating equation.
@@ -626,9 +627,10 @@ fit_vecm
 # Using observed air values from univariate analysis
 
 myforecast <- predict(vec2var(trace_test,r=2),n.ahead=32)
-air_forecast<-ts(myforecast$fcst$air_ts[,1],frequency=1,start=c(2021,1))
-air_lower<-ts(myforecast$fcst$air_ts[,2],frequency=1,start=c(2021,1))
-air_upper<-ts(myforecast$fcst$air_ts[,3],frequency=1,start=c(2021,1))
+myforecast$fcst$
+air_forecast<-ts(myforecast$fcst$air[,1],frequency=1,start=c(2021,1))
+air_lower<-ts(myforecast$fcst$air[,2],frequency=1,start=c(2021,1))
+air_upper<-ts(myforecast$fcst$air[,3],frequency=1,start=c(2021,1))
 length(air_forecast)
 ts.plot(air_forecast,air_lower,air_upper, obs_ts, col=c("black","red","red", "blue"))
 
