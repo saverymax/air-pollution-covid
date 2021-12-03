@@ -5,7 +5,6 @@ library(lubridate)
 library(readxl)
 library(CADFtest)
 library(vars)
-library(xts)
 library(imputeTS)
 library(fGarch)
 library(kableExtra)
@@ -55,7 +54,6 @@ min(highest_station$datetime)
 max(highest_station$datetime)
 # need to do le and ge because of how the == is computed.
 #station_subset <- highest_station %>% filter(datetime >= "2019-01-01" & datetime <= "2021-09-22")
-station_subset <- highest_station %>% dplyr::filter(datetime >= "2020-03-01" & datetime <= "2021-01-01")
 station_subset <- highest_station %>% dplyr::filter(datetime >= "2020-03-01" & datetime <= "2021-01-01")
 #station_subset <- highest_station %>% filter(datetime >= "2020-01-01" & datetime <= "2020-02-01")
 # check that the times are corerct
@@ -216,6 +214,10 @@ acf(fit11$residuals)
 pacf(fit11$residuals)
 acf(fit12$residuals)
 pacf(fit12$residuals)
+acf(fit23$residuals)
+pacf(fit23$residuals)
+acf(fit25$residuals)
+pacf(fit25$residuals)
 acf(fit29$residuals)
 pacf(fit29$residuals)
 acf(fit31$residuals)
@@ -225,7 +227,6 @@ pacf(fit32$residuals)
 acf(fit34$residuals)
 pacf(fit34$residuals)
 
-# todo: add highest order coefficient significance to table, test for garch effects.
 # testing models for garch effects.
 acf(fit1$residuals^2)
 pacf(fit1$residuals^2)
@@ -337,7 +338,7 @@ summary(fit25)
 # Generate plot of forecast
 # using the best model, fit23.
 # I can get the actual data observed during this period (not included in the analysis above.)
-station_observed <- highest_station %>% dplyr::filter(datetime >= "2021-03-01" & datetime <= "2021-04-01")
+station_observed <- highest_station %>% dplyr::filter(datetime >= "2021-01-02" & datetime <= "2021-02-01")
 # missing some time measurements
 station_obs_complete <- station_observed %>% tidyr::complete(datetime = seq(min(datetime), max(datetime), by="hour"))
 station_obs_complete$concentration_inter <- round(na_interpolation(station_obs_complete$Concentration),1)
@@ -351,11 +352,11 @@ min(obs_daily$day)
 max(obs_daily$day)
 nrow(obs_daily)
 # create the ts
-obs_ts <- ts(obs_daily$daily_concentration, frequency=7, start=c(2021, 9))
+obs_ts <- ts(obs_daily$daily_concentration, frequency=7, start=c(2021, 1))
 length(obs_ts)
 ts.plot(obs_ts)
 
-fcast <- predict(fit23,n.ahead=32)
+fcast <- predict(fit23,n.ahead=31)
 expected <- fcast$pred
 lower<-fcast$pred-qnorm(0.975)*fcast$se
 upper<-fcast$pred+qnorm(0.975)*fcast$se
@@ -368,7 +369,7 @@ p <- ggplot() +
     geom_line(data=forecast_df, aes(x=day, y=pred, color="Predicted")) + 
     geom_line(data=forecast_df, aes(x=day, y=lower, color="lower")) + 
     geom_line(data=forecast_df, aes(x=day, y=upper, color="upper")) + 
-    ggtitle("Predicted and observed concentration for March-April, 2020") +
+    ggtitle("Predicted and observed concentration for January-February, 2021") +
     labs(y = "Daily. conc", x = "Day",
          color = "Legend") +
     scale_color_manual(values = colors)
@@ -511,17 +512,6 @@ p <- ggplot(traffic_daily, aes(x=day, y=daily_volume)) +
 p
 dev.off()
 
-# with xts library
-# this needs to be set to 9-22 because it counts start times, not intervals as the data is
-# in the 
-#time_index <- seq(from = min(detector_complete$from), 
-#                  to = max(detector_complete$from), by = "hour")
-#time_index
-#time_index[1:3]
-#time_index[23868:length(time_index)]
-#length(time_index)
-#traff = xts(detector_complete, order.by = time_index)
-
 # test for non stationarity
 tf_max_lag=round(sqrt(length(traffic_ts)))
 CADFtest(traffic_ts, type= "drift", criterion= "BIC", max.lag.y=tf_max_lag)
@@ -581,6 +571,7 @@ summary(maxeigen_test)
 
 #############
 # VAR model
+############
 # Going in differences for the non-stationary series
 # Need to remove first measurement from stationary series
 var_df_cov <- data.frame(air_ts[2:length(air_ts)], diff(traffic_ts), diff(cov_ts))
@@ -605,9 +596,6 @@ ccf(var2_residuals[,2],var2_residuals[,3])
 # we then examine the impulse function
 irf_var<-irf(fit_var2,ortho=F,boot=T)
 plot(irf_var)
-
-# TODO: try this with a shorter series for just the period where covid is high
-# refit all the models for that period
 
 # Generating predictions
 H <- c(1, 5, 10)
@@ -658,12 +646,110 @@ colnames(dm_df) <- c("Horizon", "MAE", "MSE")
 kbl(oos_df, booktabs = T, format="latex")
 kbl(dm_df, booktabs = T, format="latex")
 
-# Generate plot of forecast
-#
+#########
+# The analysis is then repeated for October to the end of the year, to account for the period
+# of the most intense covid
+# First traffic
+detector_subset <- detector_df %>% dplyr::filter(from > "2020-10-01 00:00:00" & from <= "2021-01-01")
+detector_complete <- detector_subset %>% complete(from = seq(min(from), max(from), by="hour"))
+nrow(detector_complete)
+detector_complete$volume_inter <- round(na_interpolation(detector_complete$volume),1)
+# aggregate by day, but need to round up if staying in 2019
+traffic_daily <- detector_complete %>% mutate(day=lubridate::ceiling_date(from, "day")) %>% group_by(day) %>% 
+  summarise(daily_volume=mean(volume_inter)) 
+traffic_daily
+nrow(traffic_daily)
+min(traffic_daily$day)
+max(traffic_daily$day)
+traffic_ts <- ts(traffic_daily$daily_volume, frequency=7, start=c(2020, 39))
+# Covid
+covid_subset <- covid_flanders %>% dplyr::filter(day > "2020-10-01" & day <= "2021-01-02")
+covid_subset
+nrow(covid_subset)
+min(covid_subset$day)
+max(covid_subset$day)
+cov_ts <- ts(covid_subset$total_cases, frequency=7, start=c(2020, 39))
+# And NO2
+station_subset <- highest_station %>% dplyr::filter(datetime >= "2020-10-01" & datetime <= "2021-01-01")
+station_complete <- station_subset %>% tidyr::complete(datetime = seq(min(datetime), max(datetime), by="hour"))
+nrow(station_complete)
+station_complete$concentration_inter <- round(na_interpolation(station_complete$Concentration),1)
+air_daily <- station_complete %>% mutate(day=lubridate::ceiling_date(datetime, "day")) %>% group_by(day) %>% 
+  summarise(daily_concentration=mean(concentration_inter)) 
+air_daily
+# create the ts
+air_ts <- ts(air_daily$daily_concentration, frequency=7, start=c(2020, 39))
+
+ts.plot(air_ts)
+ts.plot(cov_ts)
+ts.plot(traffic_ts)
+
+# Then reselect lags and remodel
+length(cov_ts)
+length(air_ts)
+length(traffic_ts)
+# Set up dfs
+var_df_cov <- data.frame(air_ts, traffic_ts, cov_ts)
+var_df_no_cov <- data.frame(air_ts, traffic_ts)
+names(var_df_cov)<-c("air","traffic", "covid")
+names(var_df_no_cov)<-c("air","traffic")
+VARselect(var_df_cov,lag.max=10,type="const")
+VARselect(var_df_no_cov,lag.max=10,type="const")
+# both still order 8
+
+# REgenerating predictions
+H <- c(1, 5, 10)
+s <- round(0.75*length(air_ts))
+dm_tests <- matrix(nrow=length(H), ncol=3)
+oos_errors <- matrix(nrow=3, ncol=5)
+for (i in 1:length(H)){
+    h <- H[i]
+    print(h)
+    error_cov <- c()
+    error_nocov <- c()
+    for (k in s:(length(air_ts)-h)){
+        var_df_cov_sub <- data.frame(air_ts[1:k], diff(traffic_ts)[1:k], diff(cov_ts)[1:k])
+        var_df_no_cov_sub <- data.frame(air_ts[1:k], diff(traffic_ts)[1:k])
+        names(var_df_cov_sub)<-c("air","traffic", "covid")
+        names(var_df_no_cov_sub)<-c("air","traffic")
+        fit_var_cov <- VAR(var_df_cov_sub,type="const",p=8)
+        fit_var_nocov <- VAR(var_df_no_cov_sub,type="const",p=8)
+        # predict h step ahead
+        predict_cov_out <- predict(fit_var_cov,n.ahead=h)
+        predict_cov <- predict_cov_out[[1]][1]$air[h]
+        predict_nocov_out <- predict(fit_var_nocov,n.ahead=h)
+        predict_nocov <- predict_nocov_out[[1]][1]$air[h]
+        # subtract the predicted value predict.h from the observed value, y[i+h]
+        error_cov <- c(error_cov,air_ts[k+h]-predict_cov)
+        error_nocov <- c(error_nocov,air_ts[k+h]-predict_nocov)
+    }
+    cov_mape <- mean(abs(error_cov)/air_ts[(s+h):length(air_ts)])
+    nocov_mape <- mean(abs(error_nocov)/air_ts[(s+h):length(air_ts)])
+    cov_rmse <- sqrt(mean(error_cov^2))
+    nocov_rmse <- sqrt(mean(error_nocov^2))
+    oos_errors[i, 1] <- h
+    oos_errors[i, 2] <- cov_mape
+    oos_errors[i, 3] <- cov_rmse
+    oos_errors[i, 4] <- nocov_mape
+    oos_errors[i, 5] <- nocov_rmse
+    dm_tests[i, 1] <- h
+    dm_tests[i, 2] <- dm.test(error_cov, error_nocov,h=h,power=1)$p.value[[1]]
+    dm_tests[i, 3] <- dm.test(error_cov, error_nocov,h=h,power=2)$p.value[[1]]
+}
+oos_errors
+dm_tests
+oos_df <- as.data.frame(oos_errors)
+dm_tests
+dm_df <- as.data.frame(dm_tests)
+colnames(oos_df) <- c("Horizon", "W/ COVID MAPE", "W/COVID RMSE", "W/out COVID MAPE", "W/out COVID RMSE")
+colnames(dm_df) <- c("Horizon", "MAE", "MSE")
+kbl(oos_df, booktabs = T, format="latex")
+kbl(dm_df, booktabs = T, format="latex")
 
 
-####### 
+####### ###
 # NOT USING FOR REPORT
+###########
 # VECM
 # see exercise 6
 # k is from code above
